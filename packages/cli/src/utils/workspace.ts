@@ -84,13 +84,19 @@ export async function detectWorkspace(rootDir: string): Promise<WorkspaceInfoOpt
 
     const dirs = new Set<string>();
     for (const pattern of result.workspacePatterns) {
+      // Exclusions ("!**/test/**") narrow the package set; they name no directory to scaffold into
+      if (pattern.startsWith('!')) {
+        continue;
+      }
       // Extract directory from patterns like "apps/*", "packages/*", "foo/bar/*", "website", etc
       if (!pattern.endsWith('*')) {
         continue;
       }
       // Extract the directory name, ignore the wildcard
       const dir = pattern.replace(/\/\*{1,2}$/, '');
-      if (dir) {
+      // Skip anything that is still a glob rather than a directory: a bare "*"/"**" has no parent,
+      // and an interior wildcard ("apps/*/plugins/*") leaves one behind
+      if (dir && !dir.includes('*')) {
         dirs.add(dir);
       }
     }

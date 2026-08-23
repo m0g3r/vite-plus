@@ -7,6 +7,7 @@ import { parse as parseYaml } from 'yaml';
 
 import { DependencyType, PackageManager, type WorkspaceInfo } from '../../types/index.ts';
 import {
+  detectWorkspace,
   discoverWorkspacePackages,
   findPackageJsonFilesFromPatterns,
   updatePackageJsonWithDeps,
@@ -236,5 +237,38 @@ describe('findPackageJsonFilesFromPatterns', () => {
 
   it('returns empty when given no patterns', () => {
     expect(findPackageJsonFilesFromPatterns([], tmpDir)).toEqual([]);
+  });
+});
+
+describe('detectWorkspace parentDirs derivation', () => {
+  function writePnpmWorkspace(patterns: string[]) {
+    writeJson(path.join(tmpDir, 'package.json'), { name: 'root', private: true });
+    fs.writeFileSync(
+      path.join(tmpDir, 'pnpm-workspace.yaml'),
+      `packages:\n${patterns.map((pattern) => `  - '${pattern}'\n`).join('')}`,
+    );
+    fs.writeFileSync(path.join(tmpDir, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n");
+  }
+
+  it('derives parent directories from wildcard patterns', async () => {
+    writePnpmWorkspace(['packages/*', 'apps/**', 'website']);
+    const info = await detectWorkspace(tmpDir);
+    expect(info.parentDirs).toEqual(['apps', 'packages']);
+  });
+
+  it('skips exclusion patterns', async () => {
+    // pnpm documents excluding packages with a leading "!", e.g. `!**/test/**`.
+    // Those narrow the package set and name no directory to scaffold into, so
+    // offering "!**/test" as a `vp create` target would create a literal "!**" directory.
+    writePnpmWorkspace(['packages/**', '!**/test/**', '!**/__tests__/**']);
+    const info = await detectWorkspace(tmpDir);
+    expect(info.parentDirs).toEqual(['packages']);
+  });
+
+  it('skips patterns that leave a wildcard behind', async () => {
+    // A bare "*"/"**" has no parent directory, and an interior wildcard is not a real path.
+    writePnpmWorkspace(['*', '**', 'apps/*/plugins/*', 'packages/*']);
+    const info = await detectWorkspace(tmpDir);
+    expect(info.parentDirs).toEqual(['packages']);
   });
 });
